@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>📸 Photo Schedule</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg:       #0f0f0f;
+      --surface:  #1a1a1a;
+      --surface2: #242424;
+      --border:   #333;
+      --accent:   #e8a020;
+      --accent2:  #c07010;
+      --text:     #e8e8e8;
+      --muted:    #888;
+      --danger:   #c0392b;
+    }
+    :root.light {
+      --bg:       #f4f4f4;
+      --surface:  #ffffff;
+      --surface2: #efefef;
+      --border:   #ddd;
+      --accent:   #c07010;
+      --accent2:  #a05a08;
+      --text:     #1a1a1a;
+      --muted:    #666;
+      --danger:   #c0392b;
+    }
+    .btn-theme { font-size: 17px; padding: 6px 10px; line-height: 1; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
+      border-bottom: 2px solid var(--accent);
+      padding: 16px 28px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    header h1 { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+    header h1 span { color: var(--text); font-weight: 300; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .sync-indicator { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+    .sync-dot.online { background: #27ae60; }
+    .sync-dot.saving { background: var(--accent); animation: pulse 0.8s infinite; }
+    .sync-dot.error  { background: var(--danger); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Buttons ── */
+    button { cursor: pointer; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; padding: 8px 16px; transition: all 0.15s; }
+    .btn-primary   { background: var(--accent); color: #000; }
+    .btn-primary:hover  { background: var(--accent2); }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #333; }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 4px 10px; font-size: 12px; }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+    .btn-edit { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 4px 10px; font-size: 12px; }
+    .btn-edit:hover { background: var(--accent); color: #000; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Year bar ── */
+    .year-bar {
+      background: #111;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 28px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .year-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-right: 6px; }
+    .year-btn {
+      cursor: pointer; padding: 4px 13px; border-radius: 20px;
+      border: 1px solid var(--border); font-size: 12px; font-weight: 700;
+      background: transparent; color: var(--muted); transition: all 0.15s;
+    }
+    .year-btn:hover  { border-color: var(--accent); color: var(--accent); }
+    .year-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .year-count { font-size: 10px; opacity: 0.7; margin-left: 2px; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      padding: 12px 28px;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .toolbar input[type="text"] {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 7px 12px; font-size: 13px; width: 200px;
+    }
+    .toolbar input[type="text"]::placeholder { color: var(--muted); }
+    .filter-label { color: var(--muted); font-size: 12px; margin-left: 6px; }
+    .filter-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+    .pill { cursor: pointer; padding: 4px 11px; border-radius: 20px; border: 1px solid var(--border); font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); transition: all 0.15s; }
+    .pill.active, .pill:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Type totals ── */
+    .type-totals {
+      margin-left: auto; display: flex; align-items: center; gap: 12px;
+      font-size: 12px; color: var(--muted); white-space: nowrap; padding: 0 18px;
+    }
+    .toolbar .type-totals { display: none; }
+    .type-total-item { display: flex; align-items: center; gap: 5px; }
+    .type-total-item strong { color: var(--text); font-size: 13px; }
+    .type-total-sep { color: var(--border); }
+    .global-search-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #1a1000; border: 1px solid var(--accent); border-radius: 12px;
+      padding: 2px 10px; font-size: 11px; color: var(--accent); font-weight: 700;
+      animation: pulse 1.5s infinite;
+    }
+
+    /* ── Stats ── */
+    .stats { display: flex; gap: 20px; padding: 8px 28px 10px; flex-wrap: wrap; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .stat { font-size: 12px; color: var(--muted); }
+    .stat strong { color: var(--text); }
+
+    /* ── Photo status dot ── */
+    .photo-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0; margin: 0 auto;
+    }
+    .photo-dot.has-photo { background: #27ae60; box-shadow: 0 0 5px #27ae6066; }
+    .photo-dot.no-photo  { background: #c0392b; box-shadow: 0 0 5px #c0392b55; }
+    .td-photo-dot { text-align: center; width: 28px; }
+
+    /* ── Photo URL cell ── */
+    .td-photo-url {
+      max-width: 120px; font-size: 11px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      cursor: pointer;
+    }
+    .td-photo-url:hover { background: var(--surface2); }
+    .photo-url-link {
+      color: #5dade2; text-decoration: none; font-size: 11px;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .photo-url-link:hover { text-decoration: underline; }
+
+    /* ── Table ── */
+    .table-wrap { overflow-x: auto; padding: 16px 28px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1100px; }
+    thead tr { background: var(--surface2); text-align: left; }
+    th { padding: 10px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); border-bottom: 2px solid var(--accent); white-space: nowrap; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #fff; }
+    th.sortable::after { content: ' ⇅'; opacity: 0.35; font-size: 10px; }
+    th.sort-asc::after  { content: ' ↑'; opacity: 1; }
+    th.sort-desc::after { content: ' ↓'; opacity: 1; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr.selected { background: #1e1500 !important; }
+    td { padding: 8px 12px; vertical-align: middle; }
+    .td-actions { display: flex; gap: 6px; white-space: nowrap; }
+
+    /* ── Nav tabs ── */
+    .nav-tabs {
+      display: flex; gap: 0; border-bottom: 2px solid var(--border);
+      background: var(--surface); padding: 0 28px;
+      align-items: center;
+    }
+
+    /* ── Year dropdown in nav ── */
+    .year-select {
+      margin-left: auto;
+      margin-right: 28px;
+      width: auto !important;
+      background: var(--surface2);
+      color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .year-select:hover, .year-select:focus { border-color: var(--accent); outline: none; }
+    .nav-tabs .year-select { width: auto !important; }
+    .nav-tab {
+      padding: 10px 20px; font-size: 13px; font-weight: 700;
+      cursor: pointer; border: none; background: transparent;
+      color: var(--muted); border-bottom: 3px solid transparent;
+      margin-bottom: -2px; transition: all 0.15s; letter-spacing: 0.3px;
+      text-decoration: none; display: inline-block;
+    }
+    .nav-tab:hover { color: var(--text); }
+    .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Page panels ── */
+    .page-panel { display: none; }
+    .page-panel.active { display: block; }
+
+    /* ── Calendar ── */
+    .calendar-wrap { padding: 20px 28px; }
+    .calendar-nav { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .cal-month-label { font-size: 18px; font-weight: 700; color: var(--accent); min-width: 160px; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .cal-header { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); padding: 6px 0; text-transform: uppercase; }
+    .cal-day {
+      min-height: 80px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: default;
+    }
+    .cal-day.other-month { opacity: 0.3; }
+    .cal-day.today { border-color: var(--accent); }
+    .cal-day-num { font-size: 12px; font-weight: 700; margin-bottom: 4px; color: var(--muted); }
+    .cal-day.today .cal-day-num { color: var(--accent); }
+    .cal-event {
+      background: #3d2200; border-left: 2px solid var(--accent);
+      border-radius: 3px; padding: 2px 4px; margin-bottom: 2px;
+      font-size: 10px; line-height: 1.3; cursor: pointer; color: var(--text);
+      overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    }
+    .cal-event.status-ok    { background: #0a2e1a; border-color: #27ae60; }
+    .cal-event.status-done  { background: #222; border-color: #555; color: #888; }
+    .cal-event.status-applied { background: #0a2540; border-color: #2980b9; }
+
+    /* ── Artist stats page ── */
+    .artist-stats-wrap { padding: 20px 28px; }
+    .artist-stats-wrap h3 { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 18px; }
+    .artist-podium { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 32px; justify-content: center; }
+    .podium-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .podium-bar { width: 90px; border-radius: 6px 6px 0 0; background: var(--accent); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: 22px; min-height: 40px; transition: height 0.5s; }
+    .podium-bar.gold   { background: linear-gradient(180deg,#f9d423,#e8a020); }
+    .podium-bar.silver { background: linear-gradient(180deg,#bdc3c7,#95a5a6); }
+    .podium-bar.bronze { background: linear-gradient(180deg,#cd7f32,#a0522d); }
+    .podium-label { font-size: 13px; font-weight: 700; color: var(--text); text-align: center; max-width: 100px; }
+    .podium-count { font-size: 11px; color: var(--muted); }
+    .artist-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .artist-rank { width: 24px; font-size: 12px; color: var(--muted); text-align: right; flex-shrink: 0; }
+    .artist-name { width: 200px; font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+    .artist-track { flex: 1; background: var(--surface2); border-radius: 3px; height: 12px; }
+    .artist-fill  { height: 12px; border-radius: 3px; background: var(--accent); transition: width 0.5s; }
+    .artist-count { width: 32px; font-size: 12px; color: var(--muted); text-align: right; flex-shrink: 0; }
+
+    /* ── Badges ── */
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+    .badge-apply   { background: #3d2200; color: #e8a020; border: 1px solid #e8a020; }
+    .badge-applied { background: #0a2540; color: #5dade2; border: 1px solid #2980b9; }
+    .badge-ok      { background: #0a2e1a; color: #58d68d; border: 1px solid #27ae60; }
+    .badge-done    { background: #222;    color: #888;    border: 1px solid #555; }
+    .type-konsert   { color: #e056fd; font-weight: 600; }
+    .type-fotball   { color: #00cec9; font-weight: 600; }
+    .type-oslopride { color: #ff6eb4; font-weight: 600; }
+    .type-annet     { color: #a0aec0; font-weight: 600; }
+
+    /* ── Skeleton ── */
+    .skeleton { background: linear-gradient(90deg, var(--surface2) 25%, #2e2e2e 50%, var(--surface2) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 4px; height: 14px; }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* ── Empty state ── */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+
+    /* ── Modal ── */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; }
+    .overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--accent); border-radius: 10px; padding: 28px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+    .modal h2 { font-size: 17px; margin-bottom: 20px; color: var(--accent); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+    input[type="date"], input[type="text"], input[type="url"], select, textarea {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; width: 100%; transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    select option { background: var(--surface2); }
+    textarea { resize: vertical; min-height: 60px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+    /* ── Import modal ── */
+    .import-textarea {
+      width: 100%; min-height: 180px; resize: vertical;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 10px 12px;
+      font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.6;
+    }
+    .import-textarea:focus { outline: none; border-color: var(--accent); }
+    .import-hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+    .import-preview {
+      max-height: 200px; overflow-y: auto; margin-top: 12px;
+      border: 1px solid var(--border); border-radius: 6px; display: none;
+    }
+    .import-preview table { width: 100%; border-collapse: collapse; }
+    .import-preview th { background: var(--surface2); padding: 7px 10px; font-size: 11px; color: var(--accent); text-align: left; }
+    .import-preview td { padding: 5px 10px; font-size: 12px; border-top: 1px solid var(--border); }
+    .import-preview .row-ok  { color: var(--text); }
+    .import-preview .row-err { color: var(--danger); }
+    .import-count { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .import-count strong { color: var(--accent); }
+    .import-progress { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 10px; display: none; }
+    .import-progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.2s; width: 0%; }
+
+    /* ── Login screen ── */
+    .login-screen {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: var(--bg);
+      align-items: center; justify-content: center;
+    }
+    .login-screen.visible { display: flex; }
+    .login-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--accent);
+      border-radius: 12px;
+      padding: 40px 36px;
+      width: 360px; max-width: 95vw;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .login-logo { font-size: 26px; font-weight: 700; color: var(--accent); text-align: center; letter-spacing: 1px; }
+    .login-logo span { color: var(--text); font-weight: 300; }
+    .login-subtitle { text-align: center; color: var(--muted); font-size: 13px; margin-top: -12px; }
+    .login-field { display: flex; flex-direction: column; gap: 6px; }
+    .login-field label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+    .login-field input { width: 100%; }
+    .btn-login {
+      width: 100%; padding: 11px; font-size: 14px; font-weight: 700;
+      background: var(--accent); color: #000; border: none; border-radius: 8px;
+      cursor: pointer; transition: background 0.15s; margin-top: 4px;
+    }
+    .btn-login:hover { background: var(--accent2); }
+    .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+    .login-error {
+      background: #2a0a0a; border: 1px solid var(--danger);
+      color: #e74c3c; border-radius: 6px; padding: 9px 13px;
+      font-size: 12px; display: none;
+    }
+    .login-error.visible { display: block; }
+
+    /* ── Toast ── */
+    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--accent); color: var(--text); padding: 12px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transform: translateY(10px); transition: all 0.25s; z-index: 200; pointer-events: none; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { border-left-color: var(--danger); }
+
+    /* ── Quick edit ── */
+    .qe-select, .qe-input {
+      background: var(--surface2); border: 1px solid var(--accent);
+      color: var(--text); border-radius: 4px; padding: 3px 6px;
+      font-size: 12px; font-family: inherit; width: 100%;
+    }
+    td.editable-status, td.editable-comment, td.editable-shooting,
+    td.editable-photo-url { cursor: pointer; }
+    td.editable-status:hover, td.editable-comment:hover,
+    td.editable-shooting:hover, td.editable-photo-url:hover { background: var(--surface2); }
+
+    /* ── Year summary ── */
+    .year-summary {
+      margin: 0 28px 20px; padding: 18px 22px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; display: none;
+    }
+    .year-summary.open { display: block; }
+    .summary-toggle {
+      display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .summary-toggle-item {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; padding: 8px 22px;
+      font-size: 12px; color: var(--muted);
+      transition: color 0.15s; white-space: nowrap;
+      border-right: 1px solid var(--border);
+    }
+    .summary-toggle-item:hover { color: var(--accent); }
+    .summary-grid { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 14px; }
+    .summary-block h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.6px; margin-bottom: 8px; }
+    .summary-row { display: flex; justify-content: space-between; gap: 20px; font-size: 13px; padding: 2px 0; min-width: 160px; }
+    .summary-row strong { color: var(--text); }
+    .summary-bar-wrap { margin-top: 4px; }
+    .summary-bar { height: 6px; border-radius: 3px; background: var(--accent); margin-bottom: 6px; min-width: 4px; transition: width 0.4s; }
+
+    /* ── Total summary panel ── */
+    .total-summary {
+      margin: 0 28px 20px; padding: 18px 22px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; display: none;
+    }
+    .total-summary.open { display: block; }
+    .chart-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
+    .chart-bar-label { width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-align: right; flex-shrink: 0; }
+    .chart-bar-track { flex: 1; background: var(--surface2); border-radius: 3px; height: 10px; min-width: 60px; }
+    .chart-bar-fill  { height: 10px; border-radius: 3px; background: var(--accent); transition: width 0.4s; min-width: 4px; }
+    .chart-bar-count { width: 28px; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+
+    /* ── Notif item ── */
+    .notif-item { padding: 9px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-days { font-weight: 700; color: var(--danger); margin-right: 6px; }
+    .notif-days.soon { color: var(--accent); }
+
+    /* ── Type manager ── */
+    .type-item { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--surface2); border-radius:6px; border:1px solid var(--border); }
+    .type-item-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+    .type-item-name { flex:1; font-size:13px; font-weight:600; }
+    .type-item-default { font-size:10px; color:var(--muted); margin-left:4px; }
+    .type-item-del { background:transparent; color:var(--danger); border:1px solid var(--danger); padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer; }
+    .type-item-del:hover { background:var(--danger); color:#fff; }
+
+    @media (max-width: 600px) {
+      header, .year-bar, .toolbar, .table-wrap, .stats { padding-left: 14px; padding-right: 14px; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Login screen ── -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">📸 <span>Photo</span>Schedule</div>
+    <div class="login-subtitle">Logg inn for å fortsette</div>
+    <div class="login-field">
+      <label>E-post</label>
+      <input type="text" id="loginEmail" placeholder="din@epost.no" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label>Passord</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="login-error" id="loginError"></div>
+    <button class="btn-login" id="loginBtn" onclick="login()">Logg inn</button>
+  </div>
+</div>
+
+<!-- ── Header ── -->
+<header>
+  <h1>📸 <span>Photo</span>Schedule</h1>
+  <div class="header-actions">
+    <div class="sync-indicator">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncLabel">Kobler til…</span>
+    </div>
+    <button class="btn-secondary" onclick="openImport()">⬆ Importer</button>
+    <button class="btn-secondary" onclick="exportCSV()">⬇ Eksporter CSV</button>
+    <button class="btn-secondary" onclick="openTypeManager()" id="typeBtn">🏷 Typer</button>
+    <button class="btn-primary" onclick="openModal()" id="addBtn" disabled>＋ Legg til event</button>
+    <div style="position:relative">
+      <button class="btn-secondary" onclick="toggleNotifications()" id="bellBtn" style="display:none" title="Kommende events uten akkreditering">🔔</button>
+      <span id="notifBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--danger);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;"></span>
+    </div>
+    <button class="btn-theme btn-secondary" onclick="toggleTheme()" id="themeBtn" title="Bytt tema">🌙</button>
+    <button class="btn-secondary" onclick="logout()" id="logoutBtn" style="display:none">⏏ Logg ut</button>
+  </div>
+</header>
+
+<!-- ── Notifications dropdown ── -->
+<div id="notifPanel" style="display:none;position:fixed;top:70px;right:20px;z-index:90;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--danger);border-radius:10px;width:360px;max-height:420px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+  <div style="padding:12px 16px;font-size:12px;font-weight:700;color:var(--danger);border-bottom:1px solid var(--border)">🔔 Kommende events — mangler akkreditering</div>
+  <div id="notifList" style="padding:8px 0"></div>
+</div>
+
+<!-- ── Nav tabs ── -->
+<div class="nav-tabs">
+  <button class="nav-tab active" data-tab="schedule" onclick="switchTab('schedule')">📋 Timeplan</button>
+  <button class="nav-tab" data-tab="upcoming" onclick="switchTab('upcoming')" id="upcomingTab">🔜 Kommende</button>
+  <button class="nav-tab" data-tab="calendar" onclick="switchTab('calendar')">📅 Kalender</button>
+  <button class="nav-tab" data-tab="artists" onclick="switchTab('artists')">🏆 Artister</button>
+  <a class="nav-tab" href="portfolio.html" target="_blank">🌐 Portfolio</a>
+  <a class="nav-tab" href="report.html" target="_blank">📄 Årsrapport</a>
+  <select id="yearSelect" class="year-select" onchange="selectYear(parseInt(this.value))"></select>
+</div>
+
+<!-- ── Schedule page ── -->
+<div class="page-panel active" id="page-schedule">
+
+<!-- ── Toolbar ── -->
+<div class="toolbar">
+  <input type="text" id="search" placeholder="🔍 Søk i alle år…" oninput="onSearchInput()">
+  <span class="filter-label">Type:</span>
+  <div class="filter-pills" id="filterPillsType">
+    <!-- dynamically populated by rebuildFilterPills() -->
+  </div>
+  <span class="filter-label">Status:</span>
+  <div class="filter-pills">
+    <button class="pill" data-status="Søke"      onclick="setStatusFilter('Søke',this)">Søke</button>
+    <button class="pill" data-status="Har søkt"  onclick="setStatusFilter('Har søkt',this)">Har søkt</button>
+    <button class="pill" data-status="Akkred Ok" onclick="setStatusFilter('Akkred Ok',this)">Akkred Ok</button>
+    <button class="pill" data-status="Ferdig"    onclick="setStatusFilter('Ferdig',this)">Ferdig</button>
+  </div>
+  <div id="typeTotals" class="type-totals"></div>
+</div>
+
+<!-- ── Stats ── -->
+<div class="stats" id="stats"></div>
+
+<!-- ── Summary row ── -->
+<div class="summary-toggle" id="summaryToggle" style="display:none">
+  <div class="summary-toggle-item" onclick="toggleSummary()">
+    <span>📊 Årsoppsummering <span id="summaryYear"></span></span>
+    <span id="summaryChevron">▼</span>
+  </div>
+  <div class="summary-toggle-item" onclick="toggleTotalSummary()">
+    <span>🌐 Total Årsoppsummering</span>
+    <span id="totalChevron">▼</span>
+  </div>
+  <div id="typeTotals2" class="type-totals"></div>
+</div>
+<div class="year-summary" id="yearSummary"></div>
+<div class="total-summary" id="totalSummary"></div>
+
+<!-- ── Table ── -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px;text-align:center" title="Foto publisert">📷</th>
+        <th class="sortable" onclick="setSort('date')">Dato</th>
+        <th>Dag</th>
+        <th class="sortable" onclick="setSort('type')">Type</th>
+        <th class="sortable" onclick="setSort('artist')">Artist / Event</th>
+        <th class="sortable" onclick="setSort('venue')">Venue</th>
+        <th>Foto for</th>
+        <th>Management</th>
+        <th class="sortable" onclick="setSort('status')">Status</th>
+        <th>Kommentar</th>
+        <th>Foto URL</th>
+        <th>Handlinger</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <div class="icon">🎸</div>
+    <p>Ingen events for dette året ennå.</p>
+  </div>
+</div>
+
+</div><!-- end page-schedule -->
+
+<!-- ── Calendar page ── -->
+<div class="page-panel" id="page-calendar">
+  <div class="calendar-wrap">
+    <div class="calendar-nav">
+      <button class="btn-secondary" onclick="calPrev()">‹ Forrige</button>
+      <span class="cal-month-label" id="calMonthLabel"></span>
+      <button class="btn-secondary" onclick="calNext()">Neste ›</button>
+      <button class="btn-secondary" onclick="calToday()" style="margin-left:8px">I dag</button>
+    </div>
+    <div class="cal-grid" id="calGrid">
+      <div class="cal-header">Man</div>
+      <div class="cal-header">Tir</div>
+      <div class="cal-header">Ons</div>
+      <div class="cal-header">Tor</div>
+      <div class="cal-header">Fre</div>
+      <div class="cal-header">Lør</div>
+      <div class="cal-header">Søn</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Artists page ── -->
+<div class="page-panel" id="page-artists">
+  <div class="artist-stats-wrap">
+    <h3>🏆 Mest fotograferte artister / events</h3>
+    <div id="artistPodium" class="artist-podium"></div>
+    <div id="artistList"></div>
+  </div>
+</div>
+
+<!-- ── Add/Edit Modal ── -->
+<div class="overlay" id="overlay" onclick="closeOnBackdrop(event)">
+  <div class="modal">
+    <h2 id="modalTitle">Legg til event</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Dato</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <select id="f-type">
+          <!-- dynamically populated by rebuildTypeSelectOptions() -->
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Artist / Event</label>
+        <input type="text" id="f-artist" placeholder="f.eks. Metallica, Champions League Final">
+      </div>
+      <div class="form-group full">
+        <label>Venue</label>
+        <input type="text" id="f-venue" placeholder="f.eks. Telenor Arena, Ullevaal Stadion">
+      </div>
+      <div class="form-group">
+        <label>Foto for</label>
+        <select id="f-shooting">
+          <option value="">— Velg —</option>
+          <option value="Blezt">Blezt</option>
+          <option value="Puls">Puls</option>
+          <option value="MH">MH</option>
+          <option value="NRM">NRM</option>
+          <option value="Disharmoni">Disharmoni</option>
+          <option value="Musikknyheter">Musikknyheter</option>
+          <option value="Festivalguide">Festivalguide</option>
+          <option value="Tons of Rock">Tons of Rock</option>
+          <option value="Oslo Pride">Oslo Pride</option>
+          <option value="Gonzales">Gonzales</option>
+          <option value="Rockman">Rockman</option>
+          <option value="Annet">Annet</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Management</label>
+        <input type="text" id="f-management" placeholder="f.eks. Live Nation">
+      </div>
+      <div class="form-group full">
+        <label>Status</label>
+        <select id="f-status">
+          <option value="Søke">Søke</option>
+          <option value="Har søkt">Har søkt</option>
+          <option value="Akkred Ok">Akkred Ok</option>
+          <option value="Ferdig">Ferdig</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Kommentar</label>
+        <textarea id="f-comment" placeholder="Notater, restriksjoner, kontaktinfo…"></textarea>
+      </div>
+      <div class="form-group full">
+        <label>📷 Foto URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#555">(lenke til publisert bilde)</span></label>
+        <input type="url" id="f-photo-url" placeholder="https://smugmug.com/…  eller annen URL til bildet">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Avbryt</button>
+      <button class="btn-primary" id="saveBtn" onclick="saveEvent()">Lagre event</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import modal ── -->
+<div class="overlay" id="importOverlay" onclick="closeImportOnBackdrop(event)">
+  <div class="modal" style="width:620px">
+    <h2>⬆ Importer events</h2>
+    <div class="form-group full" style="margin-bottom:4px">
+      <label>Lim inn linjer — én event per linje</label>
+      <textarea class="import-textarea" id="importText"
+        placeholder="2026-07-15 Metallica | Telenor Arena&#10;2026-08-02 Champions League | Ullevaal Stadion&#10;2026-08-20 Tons of Rock&#10;2026-09-01 Oslo Konserthus"
+        oninput="parseImport()"></textarea>
+      <div class="import-hint">Format: <code>YYYY-MM-DD Artist / Event | Venue</code> &nbsp;·&nbsp; Dato og navn separert med mellomrom eller semikolon. Venue er valgfritt, legg til <code>|</code> etterfulgt av venue-navn.</div>
+    </div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="form-group">
+        <label>Standard type</label>
+        <select id="importType">
+          <!-- dynamically populated by rebuildTypeSelectOptions() -->
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Standard status</label>
+        <select id="importStatus">
+          <option value="Søke">Søke</option>
+          <option value="Har søkt">Har søkt</option>
+          <option value="Akkred Ok">Akkred Ok</option>
+          <option value="Ferdig">Ferdig</option>
+        </select>
+      </div>
+    </div>
+    <div class="import-count" id="importCount"></div>
+    <div class="import-preview" id="importPreview">
+      <table>
+        <thead><tr><th>#</th><th>Dato</th><th>Artist / Event</th><th>Venue</th></tr></thead>
+        <tbody id="importPreviewBody"></tbody>
+      </table>
+    </div>
+    <div class="import-progress" id="importProgress">
+      <div class="import-progress-bar" id="importProgressBar"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeImport()">Avbryt</button>
+      <button class="btn-primary" id="importBtn" onclick="runImport()" disabled>Importer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Type Manager Modal ── -->
+<div class="overlay" id="typeOverlay" onclick="closeTypeManagerOnBackdrop(event)">
+  <div class="modal" style="width:480px">
+    <h2>🏷 Administrer Typer</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:18px">Legg til eller slett egne event-typer. Standardtyper kan ikke slettes.</p>
+
+    <div id="typeList" style="margin-bottom:18px;display:flex;flex-direction:column;gap:8px"></div>
+
+    <div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--border);padding-top:16px">
+      <input type="text" id="newTypeName" placeholder="Navn på ny type…" style="flex:1"
+        onkeydown="if(event.key==='Enter')addType()">
+      <input type="text" id="newTypeColor" placeholder="#aabbcc" style="width:90px"
+        title="Valgfri farge (hex)" value="">
+      <button class="btn-primary" onclick="addType()">＋ Legg til</button>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:6px">Farge er valgfri. Eksempler: #e056fd, #00cec9, #ff6eb4</p>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeTypeManager()">Lukk</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Config ─────────────────────────────────────────────────
+  const SUPA_URL = 'https://hgsvsisnauzrlwqaicim.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhnc3ZzaXNuYXV6cmx3cWFpY2ltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3Mjk1MjIsImV4cCI6MjA5MTMwNTUyMn0.FrvfXV3b7zC7ct8S9Y4rbMPYWkDEnG3bZW3Kt0Rn-zw';
+  const db    = supabase.createClient(SUPA_URL, SUPA_KEY);
+  const TABLE = 'photo_schedule';
+
+  // ── Auth ───────────────────────────────────────────────────
+  function showLoginScreen(visible) {
+    document.getElementById('loginScreen').classList.toggle('visible', visible);
+    document.getElementById('logoutBtn').style.display = visible ? 'none' : '';
+  }
+
+  async function login() {
+    const email    = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const btn      = document.getElementById('loginBtn');
+    const errEl    = document.getElementById('loginError');
+    if (!email || !password) { errEl.textContent = 'Fyll inn e-post og passord.'; errEl.classList.add('visible'); return; }
+    btn.disabled = true; btn.textContent = 'Logger inn…';
+    errEl.classList.remove('visible');
+    const { error } = await db.auth.signInWithPassword({ email, password });
+    btn.disabled = false; btn.textContent = 'Logg inn';
+    if (error) { errEl.textContent = 'Feil e-post eller passord.'; errEl.classList.add('visible'); }
+  }
+
+  async function logout() { await db.auth.signOut(); }
+
+  db.auth.onAuthStateChange((event, session) => {
+    if (session) {
+      showLoginScreen(false);
+      if (event === 'SIGNED_IN') init();
+    } else {
+      showLoginScreen(true);
+      events = [];
+      document.getElementById('tableBody').innerHTML = '';
+      document.getElementById('stats').innerHTML = '';
+      document.getElementById('yearSelect').innerHTML = '';
+      document.getElementById('addBtn').disabled = true;
+    }
+  });
+
+  const YEARS = [2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030];
+  const DAYS  = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag'];
+
+  // ── Default types (cannot be deleted) ─────────────────────────────────────
+  const DEFAULT_TYPES = [
+    { name: 'Konsert',   color: '#e056fd' },
+    { name: 'Fotball',   color: '#00cec9' },
+    { name: 'OsloPride', color: '#ff6eb4' },
+    { name: 'Annet',     color: '#a0aec0' },
+  ];
+  const DEFAULT_TYPE_NAMES = new Set(DEFAULT_TYPES.map(t => t.name));
+
+  // Active types list (default + custom). Loaded from Supabase / localStorage.
+  let customTypes = []; // [{name, color}] — user-added only
+  const LS_KEY = 'photo_schedule_custom_types';
+
+  function allTypes() {
+    return [...DEFAULT_TYPES, ...customTypes];
+  }
+
+  function typeColor(name) {
+    const t = allTypes().find(t => t.name === name);
+    return t ? t.color : '#a0aec0';
+  }
+
+  function typeClass(name) {
+    // Generate a safe CSS class name from type name
+    const safe = (name||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    return `type-${safe}`;
+  }
+
+  // ── Load / save types from Supabase ───────────────────────────────────────
+  async function loadTypesFromSupabase() {
+    try {
+      const { data, error } = await db.from('event_types')
+        .select('name, color, is_default')
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true });
+
+      if (error) throw error;
+
+      // Separate defaults and customs from DB
+      // (defaults are always shown from DEFAULT_TYPES for display order control)
+      customTypes = (data || []).filter(t => !t.is_default);
+    } catch(e) {
+      // Fallback to localStorage if DB unavailable
+      console.warn('Could not load types from Supabase, using localStorage:', e);
+      try {
+        const stored = localStorage.getItem(LS_KEY);
+        if (stored) customTypes = JSON.parse(stored);
+      } catch(_) { customTypes = []; }
+    }
+    rebuildTypeUI();
+  }
+
+  async function addType() {
+    const nameEl  = document.getElementById('newTypeName');
+    const colorEl = document.getElementById('newTypeColor');
+    const name    = nameEl.value.trim();
+    const rawColor = colorEl.value.trim();
+    const color   = rawColor || randomTypeColor();
+
+    if (!name) { showToast('Skriv inn et navn på typen.', true); return; }
+    if (allTypes().find(t => t.name.toLowerCase() === name.toLowerCase())) {
+      showToast('En type med dette navnet finnes allerede.', true); return;
+    }
+    if (rawColor && !/^#[0-9a-fA-F]{3,6}$/.test(rawColor)) {
+      showToast('Ugyldig farge — bruk hex-format, f.eks. #e056fd', true); return;
+    }
+
+    const sortOrder = 100 + customTypes.length;
+    const { error } = await db.from('event_types')
+      .insert({ name, color, is_default: false, sort_order: sortOrder });
+
+    if (error) { showToast('Feil ved lagring: ' + error.message, true); return; }
+
+    customTypes.push({ name, color });
+    // Also sync to localStorage as backup
+    localStorage.setItem(LS_KEY, JSON.stringify(customTypes));
+
+    nameEl.value = '';
+    colorEl.value = '';
+    renderTypeList();
+    rebuildTypeUI();
+    showToast(`✓ Type "${name}" lagt til`);
+  }
+
+  async function deleteType(name) {
+    if (DEFAULT_TYPE_NAMES.has(name)) { showToast('Standardtyper kan ikke slettes.', true); return; }
+    if (!confirm(`Slette typen "${name}"? Events med denne typen beholder sin type-verdi i databasen.`)) return;
+
+    const { error } = await db.from('event_types').delete().eq('name', name).eq('is_default', false);
+    if (error) { showToast('Feil ved sletting: ' + error.message, true); return; }
+
+    customTypes = customTypes.filter(t => t.name !== name);
+    localStorage.setItem(LS_KEY, JSON.stringify(customTypes));
+    renderTypeList();
+    rebuildTypeUI();
+    showToast(`✓ Type "${name}" slettet`);
+  }
+
+  function randomTypeColor() {
+    const colors = ['#f39c12','#e74c3c','#3498db','#2ecc71','#9b59b6','#1abc9c','#e67e22','#e91e63'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  }
+
+  // ── Rebuild all type-dependent UI ─────────────────────────────────────────
+  function rebuildTypeUI() {
+    rebuildFilterPills();
+    rebuildTypeSelectOptions();
+    renderTypeTotals();
+    injectTypeCSS();
+  }
+
+  function injectTypeCSS() {
+    let style = document.getElementById('dynamic-type-css');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'dynamic-type-css';
+      document.head.appendChild(style);
+    }
+    style.textContent = allTypes().map(t => {
+      const cls = typeClass(t.name);
+      return `.${cls} { color: ${t.color}; font-weight: 600; }`;
+    }).join('\n');
+  }
+
+  function rebuildFilterPills() {
+    const container = document.getElementById('filterPillsType');
+    if (!container) return;
+    container.innerHTML = `<button class="pill active" data-filter="all" onclick="setFilter('all',this)">Alle</button>` +
+      allTypes().map(t =>
+        `<button class="pill" data-filter="${t.name}" onclick="setFilter('${t.name}',this)">${t.name}</button>`
+      ).join('');
+  }
+
+  function rebuildTypeSelectOptions(selectedVal) {
+    ['f-type', 'importType'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const cur = selectedVal || sel.value;
+      sel.innerHTML = allTypes().map(t =>
+        `<option value="${t.name}"${t.name===cur?' selected':''}>${t.name}</option>`
+      ).join('');
+    });
+  }
+
+  // ── Type Manager modal helpers ─────────────────────────────────────────────
+  function openTypeManager() {
+    renderTypeList();
+    document.getElementById('typeOverlay').classList.add('open');
+    setTimeout(() => document.getElementById('newTypeName').focus(), 100);
+  }
+
+  function closeTypeManager() {
+    document.getElementById('typeOverlay').classList.remove('open');
+    document.getElementById('newTypeName').value = '';
+    document.getElementById('newTypeColor').value = '';
+  }
+
+  function closeTypeManagerOnBackdrop(e) {
+    if (e.target === document.getElementById('typeOverlay')) closeTypeManager();
+  }
+
+  function renderTypeList() {
+    const container = document.getElementById('typeList');
+    container.innerHTML = allTypes().map(t => {
+      const isDef = DEFAULT_TYPE_NAMES.has(t.name);
+      return `<div class="type-item">
+        <div class="type-item-dot" style="background:${t.color}"></div>
+        <div class="type-item-name">${t.name}${isDef ? '<span class="type-item-default">(standard)</span>' : ''}</div>
+        ${!isDef ? `<button class="type-item-del" onclick="deleteType('${t.name.replace(/'/g,"\\'")}')">✕ Slett</button>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  let events            = [];
+  let allCounts         = {};
+  let globalTypeCounts  = {};
+  let globalVenueCounts = {};
+  let globalShootingCounts = {};
+  let totalSummaryOpen  = false;
+  let selectedYear      = 2026;
+  let editId            = null;
+  let filterType        = 'all';
+  let filterStatus      = null;
+  let globalSearchMode  = false;
+  let globalResults     = [];
+  let sortCol           = 'date';
+  let sortDir           = 'asc';
+  let calYear           = new Date().getFullYear();
+  let calMonth          = new Date().getMonth();
+  let calAllEvents      = [];
+  let activeTab         = 'schedule';
+  let viewMode          = 'year';   // 'year' = past events of selectedYear, 'upcoming' = all events from today onwards
+  let upcomingCount     = 0;
+
+  // Local date (Oslo) as YYYY-MM-DD — events before this are "done", from this date onwards "upcoming"
+  function todayLocal() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  // ── Helpers ────────────────────────────────────────────────
+  function setSyncState(state, label) {
+    document.getElementById('syncDot').className = 'sync-dot ' + state;
+    document.getElementById('syncLabel').textContent = label;
+  }
+
+  function showToast(msg, isError = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  function esc(str) {
+    return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function getDay(dateStr) {
+    if (!dateStr) return '';
+    return DAYS[new Date(dateStr + 'T12:00:00').getDay()];
+  }
+
+  function badgeClass(s) {
+    return {'Søke':'badge-apply','Har søkt':'badge-applied','Akkred Ok':'badge-ok','Ferdig':'badge-done'}[s] || 'badge-apply';
+  }
+
+  // ── Year bar ───────────────────────────────────────────────
+  async function buildYearBar() {
+    const PAGE = 1000; let allData = []; let from = 0; let keepGoing = true;
+    while (keepGoing) {
+      const { data, error } = await db.from(TABLE).select('date, type, venue, shooting').range(from, from + PAGE - 1);
+      if (error || !data || data.length === 0) { keepGoing = false; }
+      else { allData = allData.concat(data); keepGoing = data.length === PAGE; from += PAGE; }
+    }
+
+    allCounts = {};
+    globalTypeCounts  = Object.fromEntries(allTypes().map(t => [t.name, 0]));
+    globalTypeCounts['Ikke utfylt'] = 0;
+    globalVenueCounts = {};
+    globalShootingCounts = {};
+    const todayStr = todayLocal();
+    upcomingCount = 0;
+
+    allData.forEach(r => {
+      if (r.date && r.date >= todayStr) upcomingCount++;
+      if (r.date && r.date < todayStr) { const y = parseInt(r.date.substring(0, 4)); allCounts[y] = (allCounts[y] || 0) + 1; }
+      if (!r.date || r.date >= todayStr) return;
+      if (r.type && r.type.trim()) {
+        globalTypeCounts[r.type] = (globalTypeCounts[r.type] || 0) + 1;
+      } else {
+        globalTypeCounts['Ikke utfylt']++;
+      }
+      if (r.venue && r.venue.trim()) { const v = r.venue.trim(); globalVenueCounts[v] = (globalVenueCounts[v] || 0) + 1; }
+      if (r.shooting && r.shooting.trim()) { const s = r.shooting.trim(); globalShootingCounts[s] = (globalShootingCounts[s] || 0) + 1; }
+    });
+
+    const bar = document.getElementById('yearSelect');
+    if (bar) {
+      const dataYears = Object.keys(allCounts).map(Number);
+      const currentYear = new Date().getFullYear();
+      // Only past/current years here — future events live in the 🔜 Kommende tab
+      const allYears = [...new Set([...dataYears, currentYear])].filter(y => y <= currentYear).sort((a, b) => a - b);
+      bar.innerHTML = allYears.map(y => {
+        const cnt = allCounts[y] || 0;
+        return `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}${cnt ? ' ('+cnt+')' : ''}</option>`;
+      }).join('');
+    }
+
+    renderTypeTotals();
+    renderTotalSummary();
+    updateUpcomingTabLabel();
+  }
+
+  function updateUpcomingTabLabel() {
+    const tab = document.getElementById('upcomingTab');
+    if (tab) tab.innerHTML = `🔜 Kommende${upcomingCount ? ` <span class="year-count">(${upcomingCount})</span>` : ''}`;
+  }
+
+  function renderTypeTotals() {
+    ['typeTotals', 'typeTotals2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const fmt = n => (n||0).toLocaleString('no-NO');
+      el.innerHTML = allTypes().map((t, i) =>
+        (i > 0 ? '<span class="type-total-sep">·</span>' : '') +
+        `<span class="type-total-item"><span class="${typeClass(t.name)}">${t.name}</span><strong>${fmt(globalTypeCounts[t.name]||0)}</strong></span>`
+      ).join('');
+    });
+  }
+
+  // ── Search ─────────────────────────────────────────────────
+  function onSearchInput() {
+    const q = (document.getElementById('search').value || '').trim();
+    if (q.length >= 2) { doGlobalSearch(q); }
+    else { if (globalSearchMode) { globalSearchMode = false; globalResults = []; } renderTable(); }
+  }
+
+  async function doGlobalSearch(q) {
+    setSyncState('saving', 'Søker…');
+    const { data, error } = await db.from(TABLE).select('*')
+      .or(`artist.ilike.%${q}%,venue.ilike.%${q}%,comment.ilike.%${q}%`)
+      .order('date', { ascending: true });
+    if (error) { setSyncState('error', 'Søkefeil'); showToast('Søkefeil: ' + error.message, true); return; }
+    globalSearchMode = true;
+    globalResults    = data || [];
+    setSyncState('online', 'Tilkoblet');
+    renderTable();
+  }
+
+  function selectYear(year) {
+    selectedYear = year;
+    viewMode = 'year';
+    showTab('schedule');
+    if (globalSearchMode) { globalSearchMode = false; globalResults = []; document.getElementById('search').value = ''; }
+    const sel = document.getElementById('yearSelect');
+    if (sel) sel.value = year;
+    loadEvents();
+  }
+
+  // ── Load data ──────────────────────────────────────────────
+  async function loadEvents() {
+    setSyncState('saving', 'Laster…');
+    showLoadingSkeleton();
+    const today = todayLocal();
+    let query = db.from(TABLE).select('*');
+    if (viewMode === 'upcoming') {
+      // All events from today onwards, across all future years
+      query = query.gte('date', today);
+    } else {
+      // Selected year, only events that have already passed (regardless of status)
+      query = query.gte('date', `${selectedYear}-01-01`).lte('date', `${selectedYear}-12-31`).lt('date', today);
+    }
+    const { data, error } = await query.order('date', { ascending: true });
+    if (error) { setSyncState('error', 'Tilkoblingsfeil'); showToast('Kunne ikke laste data: ' + error.message, true); document.getElementById('emptyState').style.display = 'block'; return; }
+    events = data || [];
+    setSyncState('online', 'Tilkoblet');
+    document.getElementById('addBtn').disabled = false;
+    renderTypeTotals();
+    const sel = document.getElementById('yearSelect');
+    if (viewMode === 'upcoming') { upcomingCount = events.length; updateUpcomingTabLabel(); }
+    else if (sel) {
+      Array.from(sel.options).forEach(opt => {
+        if (parseInt(opt.value) === selectedYear)
+          opt.text = `${selectedYear}${events.length ? ' ('+events.length+')' : ''}`;
+      });
+    }
+    renderTable();
+    refreshNotifications();
+    renderYearSummary(events);
+  }
+
+  function showLoadingSkeleton() {
+    document.getElementById('tableBody').innerHTML = Array(4).fill('').map(() =>
+      `<tr>${Array(12).fill('').map(() => `<td><div class="skeleton" style="width:${55+Math.random()*40}%"></div></td>`).join('')}</tr>`
+    ).join('');
+    document.getElementById('emptyState').style.display = 'none';
+  }
+
+  // ── Sorting ────────────────────────────────────────────────
+  function setSort(col) {
+    if (sortCol === col) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; } else { sortCol = col; sortDir = 'asc'; }
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      const colMap = { date: 'Dato', type: 'Type', artist: 'Artist / Event', venue: 'Venue', status: 'Status' };
+      if (th.textContent.trim().startsWith(colMap[col] || col)) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+    });
+    renderTable();
+  }
+
+  function applySort(arr) {
+    return [...arr].sort((a, b) => {
+      const va = (a[sortCol] || '').toLowerCase();
+      const vb = (b[sortCol] || '').toLowerCase();
+      return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  }
+
+  // ── Tab switching ──────────────────────────────────────────
+  // UI only: highlight tab + show panel (Timeplan and Kommende share the schedule panel)
+  function showTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll('.nav-tab[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + (tab === 'upcoming' ? 'schedule' : tab)).classList.add('active');
+  }
+
+  function switchTab(tab) {
+    showTab(tab);
+    if (tab === 'schedule' || tab === 'upcoming') {
+      const mode = tab === 'upcoming' ? 'upcoming' : 'year';
+      if (mode !== viewMode) {
+        viewMode = mode;
+        if (globalSearchMode) { globalSearchMode = false; globalResults = []; }
+        document.getElementById('search').value = '';
+        loadEvents();
+      }
+    }
+    if (tab === 'calendar') loadCalendarEvents();
+    if (tab === 'artists')  renderArtistStats();
+  }
+
+  // ── Render table ───────────────────────────────────────────
+  function renderTable() {
+    const q     = (document.getElementById('search').value || '').toLowerCase();
+    const body  = document.getElementById('tableBody');
+    const empty = document.getElementById('emptyState');
+    const source = globalSearchMode ? globalResults : events;
+
+    let filtered = source.filter(e => {
+      const matchType   = filterType === 'all' || e.type === filterType;
+      const matchStatus = !filterStatus || e.status === filterStatus;
+      const matchSearch = globalSearchMode || !q ||
+        [e.artist, e.venue, e.shooting, e.management, e.comment].join(' ').toLowerCase().includes(q);
+      return matchType && matchStatus && matchSearch;
+    });
+    filtered = applySort(filtered);
+
+    if (filtered.length === 0) {
+      body.innerHTML = '';
+      empty.style.display = 'block';
+      if (globalSearchMode) {
+        empty.innerHTML = `<div class="icon">🔍</div><p>Ingen treff på "<strong>${esc(q)}</strong>" i alle år.</p>`;
+      } else {
+        empty.innerHTML = events.length === 0
+          ? (viewMode === 'upcoming'
+              ? `<div class="icon">🔜</div><p>Ingen kommende events registrert.<br>Klikk <strong>＋ Legg til event</strong> for å legge til et nytt!</p>`
+              : `<div class="icon">📅</div><p>Ingen gjennomførte events for <strong>${selectedYear}</strong> ennå.</p>`)
+          : '<div class="icon">🔍</div><p>Ingen events matcher filteret ditt.</p>';
+      }
+    } else {
+      empty.style.display = 'none';
+      body.innerHTML = filtered.map(e => {
+        const hasPhoto = !!(e.photo_url && e.photo_url.trim());
+        const dotClass = hasPhoto ? 'has-photo' : 'no-photo';
+        const dotTitle = hasPhoto ? 'Foto publisert ✓' : 'Ingen foto URL registrert';
+
+        const photoCell = hasPhoto
+          ? `<a href="${esc(e.photo_url)}" target="_blank" rel="noopener" class="photo-url-link" title="${esc(e.photo_url)}" onclick="event.stopPropagation()">🔗 Åpne</a>`
+          : `<span style="opacity:0.3;font-size:11px">+</span>`;
+
+        return `
+        <tr>
+          <td class="td-photo-dot">
+            <span class="photo-dot ${dotClass}" title="${dotTitle}"></span>
+          </td>
+          <td>${e.date||'—'}</td>
+          <td style="color:var(--muted)">${getDay(e.date)}</td>
+          <td><span class="${typeClass(e.type)}">${esc(e.type)}</span></td>
+          <td class="editable-comment" data-qe-id="${e.id}" data-qe-field="artist"
+            title="Klikk for å redigere"
+            onclick="quickEditText('${e.id}','artist',\`${(e.artist||'').replace(/`/g,"'")}\`)">
+            <strong>${esc(e.artist)||'<span style="opacity:0.3">+</span>'}</strong></td>
+          <td class="editable-comment" data-qe-id="${e.id}" data-qe-field="venue"
+            title="Klikk for å redigere"
+            onclick="quickEditText('${e.id}','venue',\`${(e.venue||'').replace(/`/g,"'")}\`)">
+            ${esc(e.venue)||'<span style="opacity:0.3">+</span>'}</td>
+          <td class="editable-shooting" data-qe-id="${e.id}" data-qe-field="shooting"
+            title="Klikk for å redigere"
+            onclick="quickEditShooting('${e.id}','${esc(e.shooting)}')">
+            ${esc(e.shooting)||'<span style="opacity:0.3">+</span>'}</td>
+          <td>${esc(e.management)}</td>
+          <td class="editable-status" data-qe-id="${e.id}" data-qe-field="status"
+            onclick="quickEditStatus('${e.id}','${esc(e.status)}')">
+            <span class="badge ${badgeClass(e.status)}">${esc(e.status)}</span></td>
+          <td class="editable-comment" data-qe-id="${e.id}" data-qe-field="comment"
+            style="max-width:160px;color:var(--muted);font-size:12px"
+            title="Klikk for å redigere"
+            onclick="quickEditComment('${e.id}',\`${(e.comment||'').replace(/`/g,"'")}\`)">
+            ${esc(e.comment)||'<span style="opacity:0.3">+</span>'}</td>
+          <td class="editable-photo-url td-photo-url" data-qe-id="${e.id}" data-qe-field="photo_url"
+            title="${hasPhoto ? esc(e.photo_url) : 'Klikk for å legge til foto URL'}"
+            onclick="quickEditPhotoUrl('${e.id}',\`${(e.photo_url||'').replace(/`/g,"'")}\`)">
+            ${photoCell}</td>
+          <td>
+            <div class="td-actions">
+              <button class="btn-edit" onclick="openModal('${e.id}')">Rediger</button>
+              <button class="btn-secondary" style="padding:4px 10px;font-size:12px" onclick="duplicateEvent('${e.id}')" title="Dupliser event">⧉</button>
+              <button class="btn-danger" onclick="deleteEvent('${e.id}')">✕</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+    renderStats(filtered);
+  }
+
+  function renderStats(filtered) {
+    const tot = filtered.length;
+    if (globalSearchMode) {
+      const q = document.getElementById('search').value || '';
+      const counts = ['Søke','Har søkt','Akkred Ok','Ferdig'].map(s => filtered.filter(e=>e.status===s).length);
+      document.getElementById('stats').innerHTML = `
+        <div class="stat"><span class="global-search-badge">🔍 Søker i alle år</span></div>
+        <div class="stat">Treff: <strong style="color:var(--accent)">${tot}</strong></div>
+        <div class="stat">Søke: <strong style="color:var(--accent)">${counts[0]}</strong></div>
+        <div class="stat">Har søkt: <strong style="color:#5dade2">${counts[1]}</strong></div>
+        <div class="stat">Akkred Ok: <strong style="color:#58d68d">${counts[2]}</strong></div>
+        <div class="stat">Ferdig: <strong>${counts[3]}</strong></div>
+      `;
+    } else {
+      const total = events.length;
+      const withPhoto = events.filter(e => e.photo_url && e.photo_url.trim()).length;
+      const counts = ['Søke','Har søkt','Akkred Ok','Ferdig'].map(s => events.filter(e=>e.status===s).length);
+      document.getElementById('stats').innerHTML = `
+        <div class="stat">${viewMode === 'upcoming'
+          ? `Visning: <strong style="color:var(--accent)">🔜 Kommende</strong>`
+          : `År: <strong style="color:var(--accent)">${selectedYear}</strong>${selectedYear === new Date().getFullYear() ? ' <span style="color:var(--muted)">(hittil i år)</span>' : ''}`}</div>
+        <div class="stat">Totalt: <strong>${total}</strong>${tot !== total ? ` <span style="color:var(--muted)">(viser ${tot})</span>` : ''}</div>
+        <div class="stat">Søke: <strong style="color:var(--accent)">${counts[0]}</strong></div>
+        <div class="stat">Har søkt: <strong style="color:#5dade2">${counts[1]}</strong></div>
+        <div class="stat">Akkred Ok: <strong style="color:#58d68d">${counts[2]}</strong></div>
+        <div class="stat">Ferdig: <strong>${counts[3]}</strong></div>
+        <div class="stat">📷 Med foto: <strong style="color:#27ae60">${withPhoto}</strong> / ${total}</div>
+      `;
+    }
+  }
+
+  // ── Modal ──────────────────────────────────────────────────
+  function openModal(id = null) {
+    editId = id;
+    const e = id ? events.find(x => x.id === id) : null;
+    const isUpcoming = viewMode === 'upcoming';
+    document.getElementById('modalTitle').textContent = id ? 'Rediger event' : (isUpcoming ? 'Legg til kommende event' : `Legg til event – ${selectedYear}`);
+    const defaultDate = isUpcoming ? todayLocal() : `${selectedYear}-01-01`;
+    document.getElementById('f-date').value       = e?.date       || defaultDate;
+    document.getElementById('f-type').value       = e?.type       || 'Konsert';
+    document.getElementById('f-artist').value     = e?.artist     || '';
+    document.getElementById('f-venue').value      = e?.venue      || '';
+    document.getElementById('f-shooting').value   = e?.shooting   || '';
+    document.getElementById('f-management').value = e?.management || '';
+    document.getElementById('f-status').value     = e?.status     || 'Søke';
+    document.getElementById('f-comment').value    = e?.comment    || '';
+    document.getElementById('f-photo-url').value  = e?.photo_url  || '';
+    document.getElementById('overlay').classList.add('open');
+    setTimeout(() => document.getElementById('f-artist').focus(), 100);
+  }
+
+  function closeModal() { document.getElementById('overlay').classList.remove('open'); editId = null; }
+  function closeOnBackdrop(e) { if (e.target === document.getElementById('overlay')) closeModal(); }
+
+  // ── Save ───────────────────────────────────────────────────
+  async function saveEvent() {
+    const artist = document.getElementById('f-artist').value.trim();
+    if (!artist) { showToast('Vennligst fyll inn Artist / Event.', true); return; }
+
+    const payload = {
+      date:       document.getElementById('f-date').value || null,
+      type:       document.getElementById('f-type').value,
+      artist,
+      venue:      document.getElementById('f-venue').value.trim(),
+      shooting:   document.getElementById('f-shooting').value,
+      management: document.getElementById('f-management').value.trim(),
+      status:     document.getElementById('f-status').value,
+      comment:    document.getElementById('f-comment').value.trim(),
+      photo_url:  document.getElementById('f-photo-url').value.trim(),
+    };
+
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true; saveBtn.textContent = 'Lagrer…';
+    setSyncState('saving', 'Lagrer…');
+
+    let error;
+    if (editId) { ({ error } = await db.from(TABLE).update(payload).eq('id', editId)); }
+    else        { ({ error } = await db.from(TABLE).insert(payload)); }
+
+    saveBtn.disabled = false; saveBtn.textContent = 'Lagre event';
+    if (error) { setSyncState('error', 'Lagring feilet'); showToast('Feil ved lagring: ' + error.message, true); return; }
+
+    setSyncState('online', 'Tilkoblet');
+    showToast(editId ? '✓ Event oppdatert' : '✓ Event lagt til');
+    closeModal();
+    await buildYearBar();
+    await loadEvents();
+  }
+
+  // ── Delete ─────────────────────────────────────────────────
+  async function deleteEvent(id) {
+    if (!confirm('Slette dette eventet?')) return;
+    setSyncState('saving', 'Sletter…');
+    const { error } = await db.from(TABLE).delete().eq('id', id);
+    if (error) { setSyncState('error', 'Sletting feilet'); showToast('Feil ved sletting: ' + error.message, true); return; }
+    setSyncState('online', 'Tilkoblet');
+    showToast('✓ Event slettet');
+    await buildYearBar();
+    await loadEvents();
+  }
+
+  // ── Filters ────────────────────────────────────────────────
+  function setFilter(val, btn) {
+    filterType = val;
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable();
+  }
+
+  function setStatusFilter(val, btn) {
+    if (filterStatus === val) { filterStatus = null; btn.classList.remove('active'); }
+    else { filterStatus = val; document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+    renderTable();
+  }
+
+  // ── Export CSV ─────────────────────────────────────────────
+  function exportCSV() {
+    const headers = ['Dato','Dag','Type','Artist/Event','Venue','Foto for','Management','Status','Kommentar','Foto URL'];
+    const rows = events.map(e => [
+      e.date, getDay(e.date), e.type, e.artist, e.venue,
+      e.shooting, e.management, e.status, e.comment, e.photo_url
+    ].map(v => `"${(v||'').replace(/"/g,'""')}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const label = viewMode === 'upcoming' ? 'kommende' : selectedYear;
+    a.download = `photo-schedule-${label}.csv`;
+    a.click();
+    showToast(`✓ CSV eksportert (${label})`);
+  }
+
+  // ── Keyboard shortcuts ─────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'n' && !e.ctrlKey && !e.metaKey &&
+        document.activeElement.tagName !== 'INPUT' &&
+        document.activeElement.tagName !== 'TEXTAREA') openModal();
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.metaKey &&
+        document.activeElement.tagName !== 'INPUT' &&
+        document.activeElement.tagName !== 'TEXTAREA') {
+      const sel  = document.getElementById('yearSelect');
+      const opts = sel ? Array.from(sel.options).map(o => parseInt(o.value)) : [];
+      const idx  = opts.indexOf(selectedYear);
+      if (e.key === 'ArrowLeft'  && idx > 0)             selectYear(opts[idx - 1]);
+      if (e.key === 'ArrowRight' && idx < opts.length-1) selectYear(opts[idx + 1]);
+    }
+  });
+
+  // ── Import ─────────────────────────────────────────────────
+  let parsedImportRows = [];
+
+  function openImport() {
+    document.getElementById('importText').value = '';
+    document.getElementById('importCount').textContent = '';
+    document.getElementById('importPreview').style.display = 'none';
+    document.getElementById('importBtn').disabled = true;
+    document.getElementById('importProgress').style.display = 'none';
+    document.getElementById('importProgressBar').style.width = '0%';
+    parsedImportRows = [];
+    document.getElementById('importOverlay').classList.add('open');
+    setTimeout(() => document.getElementById('importText').focus(), 100);
+  }
+
+  function closeImport() { document.getElementById('importOverlay').classList.remove('open'); }
+  function closeImportOnBackdrop(e) { if (e.target === document.getElementById('importOverlay')) closeImport(); }
+
+  function parseImport() {
+    const raw   = document.getElementById('importText').value;
+    const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    parsedImportRows = [];
+    const preview = document.getElementById('importPreviewBody');
+    preview.innerHTML = '';
+    lines.forEach((line, i) => {
+      const match = line.match(/^(\d{4}-\d{2}-\d{2})[;\s]+(.+?)(?:\s*\|\s*(.+))?$/);
+      if (match) {
+        const row = { date: match[1], artist: match[2].trim(), venue: (match[3] || '').trim() };
+        parsedImportRows.push(row);
+        preview.innerHTML += `<tr class="row-ok"><td style="color:var(--muted)">${i+1}</td><td>${esc(row.date)}</td><td>${esc(row.artist)}</td><td style="color:var(--muted)">${esc(row.venue)||'—'}</td></tr>`;
+      } else {
+        preview.innerHTML += `<tr class="row-err"><td style="color:var(--muted)">${i+1}</td><td colspan="3">⚠ Ugyldig format: ${esc(line)}</td></tr>`;
+      }
+    });
+    const countEl = document.getElementById('importCount');
+    const previewEl = document.getElementById('importPreview');
+    if (lines.length === 0) { countEl.innerHTML = ''; previewEl.style.display = 'none'; document.getElementById('importBtn').disabled = true; }
+    else {
+      const invalid = lines.length - parsedImportRows.length;
+      countEl.innerHTML = `<strong>${parsedImportRows.length}</strong> gyldige linjer klare for import` + (invalid > 0 ? ` · <span style="color:var(--danger)">${invalid} ugyldige ignoreres</span>` : '');
+      previewEl.style.display = 'block';
+      document.getElementById('importBtn').disabled = parsedImportRows.length === 0;
+    }
+  }
+
+  async function runImport() {
+    if (parsedImportRows.length === 0) return;
+    const type   = document.getElementById('importType').value;
+    const status = document.getElementById('importStatus').value;
+    const btn    = document.getElementById('importBtn');
+    const progWrap = document.getElementById('importProgress');
+    const progBar  = document.getElementById('importProgressBar');
+    btn.disabled = true; btn.textContent = 'Importerer…';
+    progWrap.style.display = 'block';
+    setSyncState('saving', 'Importerer…');
+    const payload = parsedImportRows.map(r => ({ date: r.date, artist: r.artist, type, status, venue: r.venue || '', shooting: '', management: '', comment: '', photo_url: '' }));
+    const BATCH = 50; let imported = 0; let failed = 0;
+    for (let i = 0; i < payload.length; i += BATCH) {
+      const batch = payload.slice(i, i + BATCH);
+      const { error } = await db.from(TABLE).insert(batch);
+      if (error) { failed += batch.length; } else { imported += batch.length; }
+      progBar.style.width = Math.round(((i + batch.length) / payload.length) * 100) + '%';
+    }
+    btn.disabled = false; btn.textContent = 'Importer';
+    setSyncState('online', 'Tilkoblet');
+    if (failed > 0) { showToast(`Importert ${imported}, ${failed} feilet.`, true); } else { showToast(`✓ ${imported} events importert`); }
+    closeImport();
+    await buildYearBar();
+    await loadEvents();
+  }
+
+  // ── Dark / light mode ──────────────────────────────────────
+  function toggleTheme() {
+    const isLight = document.documentElement.classList.toggle('light');
+    document.getElementById('themeBtn').textContent = isLight ? '☀️' : '🌙';
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  }
+  (function applyStoredTheme() {
+    if (localStorage.getItem('theme') === 'light') { document.documentElement.classList.add('light'); document.getElementById('themeBtn').textContent = '☀️'; }
+  })();
+
+  // ── Notifications ──────────────────────────────────────────
+  let notifOpen = false;
+
+  function toggleNotifications() {
+    notifOpen = !notifOpen;
+    document.getElementById('notifPanel').style.display = notifOpen ? 'block' : 'none';
+  }
+
+  document.addEventListener('click', e => {
+    const panel = document.getElementById('notifPanel');
+    const bell  = document.getElementById('bellBtn');
+    if (notifOpen && !panel.contains(e.target) && e.target !== bell) { notifOpen = false; panel.style.display = 'none'; }
+  });
+
+  async function refreshNotifications() {
+    const today  = new Date(); today.setHours(0,0,0,0);
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 60);
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const { data, error } = await db.from(TABLE).select('*').gte('date', iso(today)).lte('date', iso(cutoff));
+    if (!error) buildNotifications(data || []);
+  }
+
+  function buildNotifications(evts) {
+    const today  = new Date(); today.setHours(0,0,0,0);
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 60);
+    const pending = evts.filter(e => {
+      if (!e.date) return false;
+      const d = new Date(e.date + 'T12:00:00');
+      return d >= today && d <= cutoff && (e.status === 'Søke' || e.status === 'Har søkt');
+    }).sort((a,b) => a.date.localeCompare(b.date));
+
+    const bell  = document.getElementById('bellBtn');
+    const badge = document.getElementById('notifBadge');
+    const list  = document.getElementById('notifList');
+    bell.style.display = '';
+
+    if (pending.length === 0) {
+      badge.style.display = 'none';
+      list.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px;text-align:center">Ingen kommende events mangler akkreditering 👍</div>';
+      return;
+    }
+
+    badge.style.cssText = 'display:flex;position:absolute;top:-5px;right:-5px;background:var(--danger);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;align-items:center;justify-content:center;';
+    badge.textContent = pending.length > 9 ? '9+' : pending.length;
+    list.innerHTML = pending.map(e => {
+      const days = Math.round((new Date(e.date + 'T12:00:00') - today) / 86400000);
+      const cls  = days <= 7 ? '' : 'soon';
+      const lbl  = days === 0 ? 'I dag' : days === 1 ? 'I morgen' : `${days} dager`;
+      return `<div class="notif-item"><span class="notif-days ${cls}">${lbl}</span><strong>${esc(e.artist)}</strong><span style="color:var(--muted)"> — ${e.date}</span><span class="badge ${badgeClass(e.status)}" style="margin-left:6px;font-size:10px">${esc(e.status)}</span></div>`;
+    }).join('');
+  }
+
+  // ── Year summary ───────────────────────────────────────────
+  let summaryOpen = false;
+
+  function toggleSummary() {
+    summaryOpen = !summaryOpen;
+    document.getElementById('yearSummary').classList.toggle('open', summaryOpen);
+    document.getElementById('summaryChevron').textContent = summaryOpen ? '▲' : '▼';
+  }
+
+  function renderYearSummary(evts) {
+    const toggle = document.getElementById('summaryToggle');
+    const box    = document.getElementById('yearSummary');
+    document.getElementById('summaryYear').textContent = viewMode === 'upcoming' ? '– kommende' : selectedYear;
+    toggle.style.display = evts.length === 0 ? 'none' : 'flex';
+    if (evts.length === 0) { box.classList.remove('open'); summaryOpen = false; return; }
+
+    const types    = allTypes().map(t => t.name);
+    const statuses = ['Søke','Har søkt','Akkred Ok','Ferdig'];
+    const total = evts.length;
+    const pct   = n => Math.round((n / total) * 100);
+    const typeCounts   = Object.fromEntries(types.map(t => [t, evts.filter(e => e.type === t).length]));
+    const statusCounts = Object.fromEntries(statuses.map(s => [s, evts.filter(e => e.status === s).length]));
+    const months = Array.from({length:12}, (_,i) => { const m = String(i+1).padStart(2,'0'); return evts.filter(e => e.date && e.date.substring(5,7) === m).length; });
+    const maxM = Math.max(...months, 1);
+    const monthNames = ['Jan','Feb','Mar','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Des'];
+    const successes = evts.filter(e => e.status === 'Akkred Ok' || e.status === 'Ferdig').length;
+    const rate = total > 0 ? Math.round((successes / total) * 100) : 0;
+
+    box.innerHTML = `
+      <div class="summary-grid">
+        <div class="summary-block">
+          <h4>Per type</h4>
+          ${types.map(t => `
+            <div class="summary-row"><span style="color:${typeColor(t)}">${t}</span><strong>${typeCounts[t]||0}</strong></div>
+            <div class="summary-bar-wrap"><div class="summary-bar" style="width:${pct(typeCounts[t]||0)}%;background:${typeColor(t)}"></div></div>
+          `).join('')}
+        </div>
+        <div class="summary-block">
+          <h4>Per status</h4>
+          ${statuses.map(s => `<div class="summary-row"><span>${s}</span><strong>${statusCounts[s]}</strong></div>`).join('')}
+          <div style="margin-top:10px;font-size:12px;color:var(--muted)">Suksessrate: <strong style="color:#58d68d">${rate}%</strong></div>
+        </div>
+        <div class="summary-block">
+          <h4>Per måned</h4>
+          <div style="display:flex;align-items:flex-end;gap:5px;height:60px">
+            ${months.map((n,i) => `
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                <div style="font-size:9px;color:var(--muted)">${n>0?n:''}</div>
+                <div style="width:16px;background:var(--accent);border-radius:2px 2px 0 0;height:${Math.round((n/maxM)*48)+4}px;opacity:${n>0?1:0.2}"></div>
+                <div style="font-size:9px;color:var(--muted)">${monthNames[i]}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    if (summaryOpen) box.classList.add('open');
+  }
+
+  // ── Total summary ──────────────────────────────────────────
+  function toggleTotalSummary() {
+    totalSummaryOpen = !totalSummaryOpen;
+    document.getElementById('totalSummary').classList.toggle('open', totalSummaryOpen);
+    document.getElementById('totalChevron').textContent = totalSummaryOpen ? '▲' : '▼';
+  }
+
+  function renderTotalSummary() {
+    const box = document.getElementById('totalSummary');
+    if (!box) return;
+    const types = allTypes();
+    const totalEvents = Object.values(globalTypeCounts).reduce((a,b) => a+b, 0);
+    const pct = (n, tot) => tot > 0 ? Math.round((n / tot) * 100) : 0;
+    const venueEntries = Object.entries(globalVenueCounts).filter(([k]) => k).sort((a,b) => b[1]-a[1]).slice(0,15);
+    const maxVenue = venueEntries.length > 0 ? venueEntries[0][1] : 1;
+    const shootEntries = Object.entries(globalShootingCounts).filter(([k]) => k).sort((a,b) => b[1]-a[1]);
+    const maxShoot = shootEntries.length > 0 ? shootEntries[0][1] : 1;
+
+    box.innerHTML = `
+      <div class="summary-grid">
+        <div class="summary-block">
+          <h4>Per type – alle år (${totalEvents} totalt)</h4>
+          ${types.map(t => `
+            <div class="summary-row"><span style="color:${t.color}">${t.name}</span><strong>${globalTypeCounts[t.name]||0}</strong></div>
+            <div class="summary-bar-wrap"><div class="summary-bar" style="width:${pct(globalTypeCounts[t.name]||0, totalEvents)}%;background:${t.color}"></div></div>
+          `).join('')}
+        </div>
+        <div class="summary-block" style="min-width:260px">
+          <h4>Topp venues</h4>
+          ${venueEntries.length === 0 ? '<div style="color:var(--muted);font-size:12px">Ingen data</div>' :
+            venueEntries.map(([v, n]) => `
+              <div class="chart-bar-row">
+                <div class="chart-bar-label">${v}</div>
+                <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${Math.round((n/maxVenue)*100)}%"></div></div>
+                <div class="chart-bar-count">${n}</div>
+              </div>`).join('')}
+        </div>
+        <div class="summary-block" style="min-width:220px">
+          <h4>Foto for</h4>
+          ${shootEntries.length === 0 ? '<div style="color:var(--muted);font-size:12px">Ingen data</div>' :
+            shootEntries.map(([s, n]) => `
+              <div class="chart-bar-row">
+                <div class="chart-bar-label">${s}</div>
+                <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${Math.round((n/maxShoot)*100)}%;background:#5dade2"></div></div>
+                <div class="chart-bar-count">${n}</div>
+              </div>`).join('')}
+        </div>
+      </div>`;
+    if (totalSummaryOpen) box.classList.add('open');
+  }
+
+  // ── Quick edit ─────────────────────────────────────────────
+  async function quickEditStatus(id, currentStatus) {
+    const statuses = ['Søke','Har søkt','Akkred Ok','Ferdig'];
+    const sel = document.createElement('select');
+    sel.className = 'qe-select';
+    statuses.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; if (s === currentStatus) o.selected = true; sel.appendChild(o); });
+    const cell = document.querySelector(`[data-qe-id="${id}"][data-qe-field="status"]`);
+    if (!cell) return;
+    const original = cell.innerHTML;
+    cell.innerHTML = ''; cell.appendChild(sel); sel.focus();
+    const save = async () => {
+      const newStatus = sel.value;
+      if (newStatus === currentStatus) { cell.innerHTML = original; return; }
+      setSyncState('saving', 'Lagrer…');
+      const { error } = await db.from(TABLE).update({ status: newStatus }).eq('id', id);
+      setSyncState('online', 'Tilkoblet');
+      if (error) { showToast('Feil: ' + error.message, true); cell.innerHTML = original; return; }
+      showToast('✓ Status oppdatert');
+      await loadEvents();
+    };
+    sel.addEventListener('change', save);
+    sel.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== sel) cell.innerHTML = original; }, 150));
+  }
+
+  async function quickEditComment(id, currentComment) {
+    const cell = document.querySelector(`[data-qe-id="${id}"][data-qe-field="comment"]`);
+    if (!cell) return;
+    const original = cell.innerHTML;
+    const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'qe-input'; inp.value = currentComment || '';
+    cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); inp.select();
+    const save = async () => {
+      const newVal = inp.value.trim();
+      if (newVal === (currentComment||'').trim()) { cell.innerHTML = original; return; }
+      setSyncState('saving', 'Lagrer…');
+      const { error } = await db.from(TABLE).update({ comment: newVal }).eq('id', id);
+      setSyncState('online', 'Tilkoblet');
+      if (error) { showToast('Feil: ' + error.message, true); cell.innerHTML = original; return; }
+      showToast('✓ Kommentar oppdatert'); await loadEvents();
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cell.innerHTML = original; });
+    inp.addEventListener('blur', () => setTimeout(save, 150));
+  }
+
+  async function quickEditText(id, field, currentVal) {
+    const cell = document.querySelector(`[data-qe-id="${id}"][data-qe-field="${field}"]`);
+    if (!cell) return;
+    const original = cell.innerHTML;
+    const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'qe-input'; inp.value = currentVal || '';
+    cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); inp.select();
+    const labels = { artist: 'Artist / Event', venue: 'Venue' };
+    const save = async () => {
+      const newVal = inp.value.trim();
+      if (newVal === (currentVal||'').trim()) { cell.innerHTML = original; return; }
+      if (field === 'artist' && !newVal) { showToast('Artist / Event kan ikke være tomt.', true); cell.innerHTML = original; return; }
+      setSyncState('saving', 'Lagrer…');
+      const { error } = await db.from(TABLE).update({ [field]: newVal }).eq('id', id);
+      setSyncState('online', 'Tilkoblet');
+      if (error) { showToast('Feil: ' + error.message, true); cell.innerHTML = original; return; }
+      showToast(`✓ ${labels[field] || field} oppdatert`); await loadEvents();
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cell.innerHTML = original; });
+    inp.addEventListener('blur', () => setTimeout(save, 150));
+  }
+
+  async function quickEditShooting(id, currentVal) {
+    const options = ['','Blezt','Puls','MH','NRM','Disharmoni','Musikknyheter','Festivalguide','Tons of Rock','Oslo Pride','Gonzales','Rockman','Annet'];
+    const cell = document.querySelector(`[data-qe-id="${id}"][data-qe-field="shooting"]`);
+    if (!cell) return;
+    const original = cell.innerHTML;
+    const sel = document.createElement('select'); sel.className = 'qe-select';
+    options.forEach(o => { const opt = document.createElement('option'); opt.value = o; opt.textContent = o || '— Velg —'; if (o === currentVal) opt.selected = true; sel.appendChild(opt); });
+    cell.innerHTML = ''; cell.appendChild(sel); sel.focus();
+    const save = async () => {
+      const newVal = sel.value;
+      if (newVal === currentVal) { cell.innerHTML = original; return; }
+      setSyncState('saving', 'Lagrer…');
+      const { error } = await db.from(TABLE).update({ shooting: newVal }).eq('id', id);
+      setSyncState('online', 'Tilkoblet');
+      if (error) { showToast('Feil: ' + error.message, true); cell.innerHTML = original; return; }
+      showToast('✓ Foto for oppdatert'); await loadEvents();
+    };
+    sel.addEventListener('change', save);
+    sel.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== sel) cell.innerHTML = original; }, 150));
+  }
+
+  // ── NEW: Quick edit photo URL ──────────────────────────────
+  async function quickEditPhotoUrl(id, currentVal) {
+    const cell = document.querySelector(`[data-qe-id="${id}"][data-qe-field="photo_url"]`);
+    if (!cell) return;
+    const original = cell.innerHTML;
+    const inp = document.createElement('input'); inp.type = 'url'; inp.className = 'qe-input';
+    inp.value = currentVal || ''; inp.placeholder = 'https://…';
+    inp.style.minWidth = '200px';
+    cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); inp.select();
+    const save = async () => {
+      const newVal = inp.value.trim();
+      if (newVal === (currentVal||'').trim()) { cell.innerHTML = original; return; }
+      setSyncState('saving', 'Lagrer…');
+      const { error } = await db.from(TABLE).update({ photo_url: newVal }).eq('id', id);
+      setSyncState('online', 'Tilkoblet');
+      if (error) { showToast('Feil: ' + error.message, true); cell.innerHTML = original; return; }
+      showToast('✓ Foto URL oppdatert'); await loadEvents();
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cell.innerHTML = original; });
+    inp.addEventListener('blur', () => setTimeout(save, 150));
+  }
+
+  // ── Duplicate ──────────────────────────────────────────────
+  async function duplicateEvent(id) {
+    const e = events.find(x => x.id === id);
+    if (!e) return;
+    const { id: _id, created_at, ...payload } = e;
+    setSyncState('saving', 'Dupliserer…');
+    const { error } = await db.from(TABLE).insert(payload);
+    if (error) { setSyncState('error', 'Feil'); showToast('Feil ved duplisering: ' + error.message, true); return; }
+    setSyncState('online', 'Tilkoblet');
+    showToast('✓ Event duplisert');
+    await buildYearBar();
+    await loadEvents();
+  }
+
+  // ── Calendar ───────────────────────────────────────────────
+  async function loadCalendarEvents() {
+    setSyncState('saving', 'Laster kalender…');
+    const from = `${calYear}-01-01`; const to = `${calYear}-12-31`;
+    const { data, error } = await db.from(TABLE).select('*').gte('date', from).lte('date', to).order('date', { ascending: true });
+    setSyncState('online', 'Tilkoblet');
+    if (error) { showToast('Kalender feil: ' + error.message, true); return; }
+    calAllEvents = data || [];
+    renderCalendar();
+  }
+
+  function renderCalendar() {
+    const monthNames = ['Januar','Februar','Mars','April','Mai','Juni','Juli','August','September','Oktober','November','Desember'];
+    document.getElementById('calMonthLabel').textContent = `${monthNames[calMonth]} ${calYear}`;
+    const grid = document.getElementById('calGrid');
+    const headers = Array.from(grid.children).slice(0, 7);
+    grid.innerHTML = ''; headers.forEach(h => grid.appendChild(h));
+    const today = new Date(); today.setHours(0,0,0,0);
+    const firstDay = new Date(calYear, calMonth, 1);
+    const lastDay  = new Date(calYear, calMonth + 1, 0);
+    let startDow = firstDay.getDay() - 1; if (startDow < 0) startDow = 6;
+    const totalCells = Math.ceil((startDow + lastDay.getDate()) / 7) * 7;
+    const eventsThisMonth = calAllEvents.filter(e => {
+      if (!e.date) return false;
+      const [y, m] = e.date.split('-').map(Number);
+      return y === calYear && m === calMonth + 1;
+    });
+    for (let i = 0; i < totalCells; i++) {
+      const dayOffset = i - startDow + 1;
+      const d = new Date(calYear, calMonth, dayOffset);
+      const cell = document.createElement('div');
+      cell.className = 'cal-day' + (dayOffset < 1 || dayOffset > lastDay.getDate() ? ' other-month' : '') + (d.getTime() === today.getTime() ? ' today' : '');
+      const dayNum = document.createElement('div'); dayNum.className = 'cal-day-num'; dayNum.textContent = d.getDate();
+      cell.appendChild(dayNum);
+      const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      eventsThisMonth.filter(e => e.date === dateStr).forEach(e => {
+        const ev = document.createElement('div');
+        const sc = { 'Akkred Ok':'status-ok','Ferdig':'status-done','Har søkt':'status-applied' }[e.status] || '';
+        ev.className = `cal-event ${sc}`;
+        ev.textContent = (e.photo_url ? '📷 ' : '') + (e.artist || '—');
+        ev.title = `${e.artist} @ ${e.venue||'?'} [${e.status}]${e.photo_url ? ' — Foto publisert' : ''}`;
+        ev.onclick = () => openFromCalendar(e);
+        cell.appendChild(ev);
+      });
+      grid.appendChild(cell);
+    }
+  }
+
+  async function openFromCalendar(e) {
+    if (e.date >= todayLocal()) { viewMode = 'upcoming'; showTab('upcoming'); }
+    else { viewMode = 'year'; selectedYear = parseInt(e.date.substring(0,4)); showTab('schedule');
+           const sel = document.getElementById('yearSelect'); if (sel) sel.value = selectedYear; }
+    if (globalSearchMode) { globalSearchMode = false; globalResults = []; document.getElementById('search').value = ''; }
+    await loadEvents();
+    openModal(e.id);
+  }
+
+  function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } if (activeTab === 'calendar') loadCalendarEvents(); }
+  function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } if (activeTab === 'calendar') loadCalendarEvents(); }
+  function calToday() { const now = new Date(); calYear = now.getFullYear(); calMonth = now.getMonth(); if (activeTab === 'calendar') loadCalendarEvents(); }
+
+  // ── Artist stats ───────────────────────────────────────────
+  async function renderArtistStats() {
+    setSyncState('saving', 'Laster artistdata…');
+    const PAGE = 1000; let allData = []; let from = 0; let keepGoing = true;
+    while (keepGoing) {
+      const { data, error } = await db.from(TABLE).select('artist,type').range(from, from + PAGE - 1);
+      if (error || !data || data.length === 0) { keepGoing = false; }
+      else { allData = allData.concat(data); keepGoing = data.length === PAGE; from += PAGE; }
+    }
+    setSyncState('online', 'Tilkoblet');
+    const counts = {}; const typeFor = {};
+    allData.forEach(e => {
+      if (!e.artist || !e.artist.trim()) return;
+      const a = e.artist.trim(); counts[a] = (counts[a] || 0) + 1;
+      if (!typeFor[a]) typeFor[a] = e.type;
+    });
+    const sorted   = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+    const top3     = sorted.slice(0, 3);
+    const rest     = sorted.slice(3, 50);
+    const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
+    const typeColors = Object.fromEntries(allTypes().map(t => [t.name, t.color]));
+    const medals = ['🥇','🥈','🥉'];
+    const barClasses = ['gold','silver','bronze'];
+    const heights = [120, 90, 70];
+    const podiumOrder = [1, 0, 2];
+    document.getElementById('artistPodium').innerHTML = top3.length === 0 ? '<div style="color:var(--muted)">Ingen data ennå.</div>' :
+      podiumOrder.filter(i => top3[i]).map(i => {
+        const [name, count] = top3[i];
+        return `<div class="podium-item">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${count} gang${count>1?'er':''}</div>
+          <div class="podium-bar ${barClasses[i]}" style="height:${heights[i]}px">${medals[i]}</div>
+          <div class="podium-label" style="color:${typeColors[typeFor[name]]||'var(--text)'}">${esc(name)}</div>
+        </div>`;
+      }).join('');
+    document.getElementById('artistList').innerHTML = rest.length === 0 ? '' : `
+      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:18px">
+        ${rest.map(([name, count], idx) => `
+          <div class="artist-bar-row">
+            <div class="artist-rank">${idx + 4}</div>
+            <div class="artist-name" style="color:${typeColors[typeFor[name]]||'var(--text)'}" title="${esc(name)}">${esc(name)}</div>
+            <div class="artist-track"><div class="artist-fill" style="width:${Math.round((count/maxCount)*100)}%"></div></div>
+            <div class="artist-count">${count}</div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  // ── Init ───────────────────────────────────────────────────
+  async function init() {
+    await loadTypesFromSupabase();   // load custom types first
+    await buildYearBar();
+    await loadEvents();
+  }
+
+  document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  document.getElementById('loginEmail').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPassword').focus(); });
+
+  (async () => {
+    const { data: { session } } = await db.auth.getSession();
+    if (session) { showLoginScreen(false); await init(); }
+    else { showLoginScreen(true); }
+  })();
+</script>
+</body>
+</html>
