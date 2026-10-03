@@ -94,6 +94,11 @@
     .filter-pills { display: flex; gap: 5px; flex-wrap: wrap; }
     .pill { cursor: pointer; padding: 4px 11px; border-radius: 20px; border: 1px solid var(--border); font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); transition: all 0.15s; }
     .pill.active, .pill:hover { border-color: var(--accent); color: var(--accent); }
+    .toolbar select.type-filter-select {
+      width: auto !important; background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+    }
+    .toolbar select.type-filter-select:hover, .toolbar select.type-filter-select:focus { border-color: var(--accent); outline: none; }
 
     /* ── Type totals ── */
     .type-totals {
@@ -473,9 +478,9 @@
 <div class="toolbar">
   <input type="text" id="search" placeholder="🔍 Søk i alle år…" oninput="onSearchInput()">
   <span class="filter-label">Type:</span>
-  <div class="filter-pills" id="filterPillsType">
+  <select id="filterTypeSelect" class="type-filter-select" onchange="setFilter(this.value)">
     <!-- dynamically populated by rebuildFilterPills() -->
-  </div>
+  </select>
   <span class="filter-label">Status:</span>
   <div class="filter-pills">
     <button class="pill" data-status="Søke"      onclick="setStatusFilter('Søke',this)">Søke</button>
@@ -873,12 +878,13 @@
   }
 
   function rebuildFilterPills() {
-    const container = document.getElementById('filterPillsType');
+    const container = document.getElementById('filterTypeSelect');
     if (!container) return;
-    container.innerHTML = `<button class="pill active" data-filter="all" onclick="setFilter('all',this)">Alle</button>` +
-      allTypes().map(t =>
-        `<button class="pill" data-filter="${t.name}" onclick="setFilter('${t.name}',this)">${t.name}</button>`
-      ).join('');
+    const names = allTypes().map(t => t.name);
+    if (filterType !== 'all' && !names.includes(filterType)) filterType = 'all';
+    container.innerHTML = `<option value="all">Alle</option>` +
+      names.map(n => `<option value="${esc(n)}"${n===filterType?' selected':''}>${esc(n)}</option>`).join('');
+    container.value = filterType;
   }
 
   function rebuildTypeSelectOptions(selectedVal) {
@@ -1337,10 +1343,8 @@
   }
 
   // ── Filters ────────────────────────────────────────────────
-  function setFilter(val, btn) {
-    filterType = val;
-    document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+  function setFilter(val) {
+    filterType = val || 'all';
     renderTable();
   }
 
